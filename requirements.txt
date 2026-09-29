@@ -1,7 +1,8 @@
-requests
-pytest
-pytest-html
-allure-pytest
-PyMySQL
-redis
-openpyxl
+requests==2.33.1
+pytest==9.1.1
+pytest-html==4.2.0
+allure-pytest==2.16.0
+PyMySQL==1.2.0
+redis==8.1.0
+openpyxl==3.1.5
+python-dotenv==1.2.2

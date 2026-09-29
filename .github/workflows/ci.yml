@@ -1,0 +1,106 @@
+name: CI
+
+# push / PR 自动跑「离线校验」：装依赖 → 校验用例可收集 → 扫凭据与配置一致性。
+# 真正的接口全量运行需要可达的若依后端（独立的 Java 工程，不在本仓库内），
+# 所以单独放在手动触发的 full-run job 里，连接信息全部由 GitHub secrets 注入。
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      marker:
+        description: 全量运行时额外的 pytest 标记过滤（留空跑全部，也可填 smoke）
+        required: false
+        default: ""
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  offline-check:
+    name: 离线校验（依赖 / 用例可收集 / 凭据扫描）
+    runs-on: ubuntu-latest
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 准备 Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 用例可收集性校验（只收集，不发起任何请求）
+        run: python -m pytest testcases --collect-only -q
+
+      - name: 凭据与配置一致性扫描
+        run: python scripts/ci_offline_check.py
+
+  full-run:
+    name: 全量运行（手动触发，需先配好 secrets）
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    env:
+      RY_BASE_URL: ${{ secrets.RY_BASE_URL }}
+      RY_REDIS_HOST: ${{ secrets.RY_REDIS_HOST }}
+      RY_REDIS_PORT: ${{ secrets.RY_REDIS_PORT }}
+      RY_MYSQL_HOST: ${{ secrets.RY_MYSQL_HOST }}
+      RY_MYSQL_PORT: ${{ secrets.RY_MYSQL_PORT }}
+      RY_MYSQL_USER: ${{ secrets.RY_MYSQL_USER }}
+      RY_MYSQL_PASSWORD: ${{ secrets.RY_MYSQL_PASSWORD }}
+      RY_MYSQL_DB: ${{ secrets.RY_MYSQL_DB }}
+      RY_ADMIN_USERNAME: ${{ secrets.RY_ADMIN_USERNAME }}
+      RY_ADMIN_PASSWORD: ${{ secrets.RY_ADMIN_PASSWORD }}
+      RY_GUEST_USERNAME: ${{ secrets.RY_GUEST_USERNAME }}
+      RY_GUEST_PASSWORD: ${{ secrets.RY_GUEST_PASSWORD }}
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 准备 Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 检查后端地址是否已注入
+        run: |
+          if [ -z "$RY_BASE_URL" ]; then
+            echo "::error::未配置 RY_BASE_URL secret。本 job 需要一个 CI 能访问到的若依后端"
+            echo "::error::（可把本地后端通过隧道暴露，或用自建 runner），配置方式见 README 的 CI 一节。"
+            exit 1
+          fi
+
+      - name: 全量执行
+        run: |
+          if [ -n "${{ inputs.marker }}" ]; then
+            python -m pytest testcases -v -m "${{ inputs.marker }}" \
+              --html=report/report.html --self-contained-html \
+              --alluredir=allure-results --clean-alluredir
+          else
+            python -m pytest testcases -v \
+              --html=report/report.html --self-contained-html \
+              --alluredir=allure-results --clean-alluredir
+          fi
+
+      - name: 上传测试报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-report
+          path: |
+            report/
+            allure-results/
+          if-no-files-found: ignore

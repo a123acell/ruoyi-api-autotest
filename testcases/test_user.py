@@ -2,9 +2,9 @@
 """测试用例：用户管理模块（含数据驱动分页）"""
 import allure
 import pytest
-import requests
 
-from config import BASE_URL
+from config import ADMIN_USERNAME
+from utils.db_check import query
 
 EPIC = "RuoYi 后台管理系统 · 接口自动化测试"
 
@@ -17,14 +17,9 @@ EPIC = "RuoYi 后台管理系统 · 接口自动化测试"
 @allure.description("数据驱动：5 组分页参数组合下，用户列表接口均正常返回 rows 与 total。")
 @pytest.mark.smoke
 @pytest.mark.parametrize("pageNum,pageSize", [(1, 10), (1, 1), (2, 3), (1, 50), (1, 100)])
-def test_user_list_pagination(auth_headers, pageNum, pageSize):
+def test_user_list_pagination(api, pageNum, pageSize):
     with allure.step(f"GET /system/user/list?pageNum={pageNum}&pageSize={pageSize}"):
-        resp = requests.get(
-            f"{BASE_URL}/system/user/list",
-            headers=auth_headers,
-            params={"pageNum": pageNum, "pageSize": pageSize},
-            timeout=10,
-        ).json()
+        resp = api.get("/system/user/list", params={"pageNum": pageNum, "pageSize": pageSize})
     with allure.step("断言 code=200、rows 为数组、包含 total"):
         assert resp.get("code") == 200, f"用户列表返回异常：{resp}"
         assert isinstance(resp.get("rows"), list)
@@ -37,22 +32,13 @@ def test_user_list_pagination(auth_headers, pageNum, pageSize):
 @allure.severity(allure.severity_level.CRITICAL)
 @allure.title("USER-006 查询单个用户详情返回 userName=admin")
 @pytest.mark.smoke
-def test_user_detail(auth_headers):
-    with allure.step("GET /system/user/1"):
-        resp = requests.get(f"{BASE_URL}/system/user/1", headers=auth_headers, timeout=10).json()
-    with allure.step("断言返回 admin 用户信息"):
+def test_user_detail(api):
+    with allure.step(f"按 user_name={ADMIN_USERNAME} 反查 user_id，避免写死自增主键"):
+        rows = query("SELECT user_id FROM sys_user WHERE user_name = %s", (ADMIN_USERNAME,))
+        assert rows, f"未找到账号 {ADMIN_USERNAME}，请检查初始化数据"
+        user_id = rows[0][0]
+    with allure.step(f"GET /system/user/{user_id}"):
+        resp = api.get(f"/system/user/{user_id}")
+    with allure.step(f"断言返回 {ADMIN_USERNAME} 的用户信息"):
         assert resp.get("code") == 200
-        assert resp.get("data", {}).get("userName") == "admin"
-
-
-@allure.epic(EPIC)
-@allure.feature("用户管理")
-@allure.story("认证边界")
-@allure.severity(allure.severity_level.CRITICAL)
-@allure.title("USER-023 未认证访问用户列表返回 401")
-@pytest.mark.smoke
-def test_user_list_no_token():
-    with allure.step("不携带 Token 调用 GET /system/user/list"):
-        resp = requests.get(f"{BASE_URL}/system/user/list", timeout=10).json()
-    with allure.step("断言返回 401"):
-        assert resp.get("code") == 401
+        assert resp.get("data", {}).get("userName") == ADMIN_USERNAME

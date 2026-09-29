@@ -8,15 +8,17 @@
 """
 import json
 
-import requests
 import redis
 
-from config import BASE_URL, REDIS_HOST, REDIS_PORT, REDIS_DB
+from common.api_client import ApiClient
+from config import REDIS_HOST, REDIS_PORT, REDIS_DB
+
+_client = ApiClient()
 
 
 def get_captcha_code():
     """获取验证码答案和 uuid，返回 (答案, uuid)"""
-    resp = requests.get(f"{BASE_URL}/captchaImage", timeout=10).json()
+    resp = _client.get("/captchaImage", auth=False)
     uuid = resp["uuid"]
 
     r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, decode_responses=True)
@@ -32,11 +34,11 @@ def get_captcha_code():
 def login(username, password):
     """用万能验证码完成登录，成功返回 Token 字符串"""
     code, uuid = get_captcha_code()
-    resp = requests.post(
-        f"{BASE_URL}/login",
+    resp = _client.post(
+        "/login",
+        auth=False,
         json={"username": username, "password": password, "code": code, "uuid": uuid},
-        timeout=10,
-    ).json()
+    )
 
     if resp.get("code") == 200:
         return resp["token"]
