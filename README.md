@@ -59,6 +59,11 @@ allure open allure-report        # 本地预览
 > 用例已用 `@allure.title("编号 用例名")` 标注，报告里直接以「SEC-001 / SEC-002 / DB-001」这类编号呈现，
 > 便于按编号定位到具体的接口与断言。
 
+![Allure 报告总览](docs/allure-overview.png)
+
+> 上图为最近一次全量回归的 Allure 报告总览：70 个参数化实例全部通过，用例执行耗时 13s 685ms
+> （生成于 2026-09-29）。截图会随代码更新而过期，具体数字以实际运行为准。
+
 ## 五、目录结构
 
 ```
@@ -81,6 +86,10 @@ allure open allure-report        # 本地预览
 │   └── test_data_consistency.py  # MySQL 数据一致性校验
 ├── utils/
 │   └── db_check.py            # MySQL 连接与校验工具
+├── probe/
+│   └── probe_abnormal.py      # 一次性探针：实测异常输入与 Token 篡改行为，为用例预期值提供出处
+├── docs/
+│   └── allure-overview.png    # README 中的 Allure 报告总览截图
 ├── scripts/
 │   ├── fix_guest_password.py  # 一次性：初始化「访客」账号密码
 │   └── ci_offline_check.py    # CI 离线校验：凭据扫描 + 环境变量模板一致性
@@ -98,7 +107,7 @@ allure open allure-report        # 本地预览
 5. **越权 401 / 403**：不带 Token 访问受限接口返回 401；用一个「零权限访客」账号访问返回 403。
 6. **MySQL 数据一致性**：直接查 `sys_user`、`sys_user_role`、`sys_role`、`sys_role_menu` 这几张表，验证权限关系是否正确落库。
 7. **写接口正向链路**：新增/修改/删除不只断言返回码，而是走完整链路——正向操作 → 断言成功 → 落库校验 → 反向校验（重复新增 / 层级保护）→ 数据清理。清理放在 `finally` 且走数据库硬删除，断言失败也不残留测试数据，用例可重复执行。
-8. **异常输入与注入防护**：分页参数越界/非法值、超长关键字、LIKE 通配符、排序字段与查询条件注入，预期值全部来自实测探针而非臆测；断言优先看业务码与数据条数，不依赖后端提示文案。
+8. **异常输入与注入防护**：分页参数越界/非法值、超长关键字、LIKE 通配符、排序字段与查询条件注入，预期值全部来自实测探针而非臆测（探针脚本 `probe/probe_abnormal.py`，可复跑复核，不属于自动化用例集）；断言优先看业务码与数据条数，不依赖后端提示文案。
 9. **响应时间阈值**：请求层把每次请求耗时记在 `ApiClient.last_elapsed_ms`，性能用例先预热一次再计时，阈值由 `RY_MAX_RESPONSE_MS` 配置（默认 1000ms），避免把某一台机器的标准写死。
 
 ## 七、CI（GitHub Actions）
